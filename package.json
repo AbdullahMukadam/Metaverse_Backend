@@ -2,7 +2,9 @@
   "name": "metaversebackend",
   "description": "Backend for the 2d Metaverse",
   "scripts": {
-    "dev": "nodemon src/index.ts"
+    "dev": "nodemon src/index.ts",
+    "start": "node src/index.ts",
+    "build": "npm install "
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
