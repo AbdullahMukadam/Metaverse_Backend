@@ -4,7 +4,7 @@ import { Server } from "socket.io";
 import http from "http"
 import { SocketConnection } from "./socket/socket";
 import cors from "cors"
-import pingRoutes from "../src/routes/pingRoutes"
+import pingRoutes from "./routes/pingRoutes"
 
 const app = express()
 const server = http.createServer(app)
