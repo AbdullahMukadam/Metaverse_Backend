@@ -10,7 +10,7 @@ const app = express()
 const server = http.createServer(app)
 
 const corsOptions = {
-    origin: config.Origin,
+    origin: "*",
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
     exposedHeaders: ['*', 'Authorization'],
