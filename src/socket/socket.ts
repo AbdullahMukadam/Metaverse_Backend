@@ -1,5 +1,6 @@
 import { Server, Socket } from "socket.io";
 import { config } from "../config/config";
+import HouseRoomClass from "../clases/HouseRoom";
 
 interface UserData {
     userId: string;
@@ -109,6 +110,7 @@ class SpaceManager {
 
 const spaceManager = new SpaceManager();
 const DEFAULT_SPACE_ID = config.DEFAULT_SPACE_ID
+const DEFAULT_HOUSE_ROOM_ID = config.DEFAULT_HOUSE_ROOM_ID
 
 const SocketConnection = (socket: Socket, io: Server) => {
 
@@ -193,31 +195,126 @@ const SocketConnection = (socket: Socket, io: Server) => {
         })
     })
 
+    socket.on("enteredHouseRoom", (data: UserData) => {
+        if (currentUserId) {
+            spaceManager.leaveSpace(DEFAULT_SPACE_ID, currentUserId);
+            socket.leave(DEFAULT_SPACE_ID);
+            socket.to(DEFAULT_SPACE_ID).emit("UserLeft", { userId: currentUserId }); 
+        }
 
-    socket.on("disconnection", (data: { userId: string }) => {
-        if (!currentSpace) return;
+        currentSpace = DEFAULT_HOUSE_ROOM_ID;
+        currentUserId = data.userId;
+        socket.join(currentSpace);
 
+        const otherUsersInHouse = HouseRoomClass.joinSpace(
+            currentSpace,
+            { ...data, direction: 'down', isMoving: false },
+            socket.id
+        );
 
-        const leftUser = spaceManager.leaveSpace(currentSpace, data.userId);
-        if (leftUser) {
-            socket.to(currentSpace).emit("UserLeft", {
-                userId: leftUser.userId,
-                socketId: leftUser.socketId
+        socket.emit("HouseRoomJoined", { UsersArr: otherUsersInHouse });
+        socket.to(currentSpace).emit("HouseUserJoined", { 
+            userId: data.userId,
+            UserName: data.UserName,
+            positions: data.positions,
+            selectedCharacter: data.selectedCharacter,
+        });
+
+        console.log(`User ${data.UserName} moved from main world to room ${currentSpace}`);
+    });
+
+    socket.on("UpdateHousePosition", (data: ClientMovementData) => {
+        if (currentSpace !== DEFAULT_HOUSE_ROOM_ID || !currentUserId) return;
+
+        
+        const updated = HouseRoomClass.updatePosition(currentSpace, currentUserId, data);
+
+        if (updated) {
+            socket.to(currentSpace).emit("HouseUserMoved", { 
+                userId: currentUserId,
+                positions: data.positions,
+                direction: data.direction,
+                isMoving: data.isMoving,
             });
-            console.log(`User ${leftUser.UserName} left space ${currentSpace}`);
+        }
+    });
+
+    socket.on("LeaveHouseMethod", async (data: { userId: string }) => {
+        if (currentSpace !== DEFAULT_HOUSE_ROOM_ID || !data.userId) return;
+
+       
+        const leftUser = HouseRoomClass.leaveSpace(currentSpace, data.userId);
+
+        if (leftUser) {
+            socket.leave(currentSpace); 
+            
+            socket.to(currentSpace).emit("LeaveHouse", { userId: data.userId });
+            console.log(`User ${leftUser.UserName} left house room ${currentSpace}`);
+        }
+
+        
+        currentSpace = DEFAULT_SPACE_ID; 
+        currentUserId = data.userId; 
+
+        const mainWorldPositions = { X: 570, Y: 325 }; 
+        const userToRejoinMain : UserData = {
+            userId: data.userId,
+            UserName: leftUser?.UserName || '', 
+            positions: mainWorldPositions,
+            selectedCharacter: leftUser?.selectedCharacter || '', 
+            direction: 'down',
+            isMoving: false
+        };
+
+        const otherUsersInMain = spaceManager.joinSpace(
+            currentSpace,
+            userToRejoinMain,
+            socket.id
+        );
+
+        socket.join(currentSpace);   
+        socket.emit("SpaceJoined", { UsersArr: otherUsersInMain });
+        socket.to(currentSpace).emit("UserJoined", {
+            userId: userToRejoinMain.userId,
+            UserName: userToRejoinMain.UserName,
+            socketId: socket.id,
+            positions: userToRejoinMain.positions,
+            selectedCharacter: userToRejoinMain.selectedCharacter
+        });
+
+        console.log(`User ${userToRejoinMain.UserName} rejoined main world ${currentSpace}`);
+    });
+
+
+    socket.on("disconnection", () => {
+        if (currentSpace && currentUserId) {
+            let leftUser;
+            if (currentSpace === DEFAULT_HOUSE_ROOM_ID) {
+                leftUser = HouseRoomClass.leaveSpace(currentSpace, currentUserId);
+            } else {
+                leftUser = spaceManager.leaveSpace(currentSpace, currentUserId);
+            }
+
+            if (leftUser) {
+                socket.to(currentSpace).emit("UserLeft", { userId: leftUser.userId });
+                console.log(`User ${leftUser.UserName} disconnected from ${currentSpace}`);
+            }
         }
     });
 
 
     socket.on("disconnect", () => {
         if (currentSpace && currentUserId) {
-            const leftUser = spaceManager.leaveSpace(currentSpace, currentUserId);
+            let leftUser;
+            if (currentSpace === DEFAULT_HOUSE_ROOM_ID) {
+                leftUser = HouseRoomClass.leaveSpace(currentSpace, currentUserId);
+            } else {
+                leftUser = spaceManager.leaveSpace(currentSpace, currentUserId);
+            }
+
             if (leftUser) {
-                socket.to(currentSpace).emit("UserLeft", {
-                    userId: leftUser.userId,
-                    socketId: leftUser.socketId
-                });
-                console.log(`User ${leftUser.UserName} disconnected`);
+                socket.to(currentSpace).emit("UserLeft", { userId: leftUser.userId });
+                console.log(`User ${leftUser.UserName} disconnected from ${currentSpace}`);
             }
         }
     });
