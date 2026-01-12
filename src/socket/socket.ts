@@ -12,6 +12,7 @@ interface UserData {
     selectedCharacter: string;
     direction?: 'up' | 'down' | 'left' | 'right';
     isMoving?: boolean;
+    roomId?: string;
 }
 
 interface ClientMovementData {
@@ -120,7 +121,7 @@ const SocketConnection = (socket: Socket, io: Server) => {
 
     socket.on("JoinSpace", (data: UserData) => {
         try {
-            currentSpace = DEFAULT_SPACE_ID;
+            currentSpace = data.roomId || DEFAULT_SPACE_ID;
             currentUserId = data.userId;
 
             const otherUsers = spaceManager.joinSpace(
@@ -196,13 +197,15 @@ const SocketConnection = (socket: Socket, io: Server) => {
     })
 
     socket.on("enteredHouseRoom", (data: UserData) => {
-        if (currentUserId) {
-            spaceManager.leaveSpace(DEFAULT_SPACE_ID, currentUserId);
-            socket.leave(DEFAULT_SPACE_ID);
-            socket.to(DEFAULT_SPACE_ID).emit("UserLeft", { userId: currentUserId }); 
+        const userSpaceId = data.roomId || DEFAULT_SPACE_ID;
+        
+        if (currentUserId && currentSpace) {
+            spaceManager.leaveSpace(currentSpace, currentUserId);
+            socket.leave(currentSpace);
+            socket.to(currentSpace).emit("UserLeft", { userId: currentUserId }); 
         }
 
-        currentSpace = DEFAULT_HOUSE_ROOM_ID;
+        currentSpace = `${userSpaceId}-house`;
         currentUserId = data.userId;
         socket.join(currentSpace);
 
@@ -220,11 +223,11 @@ const SocketConnection = (socket: Socket, io: Server) => {
             selectedCharacter: data.selectedCharacter,
         });
 
-        console.log(`User ${data.UserName} moved from main world to room ${currentSpace}`);
+        console.log(`User ${data.UserName} moved from space ${userSpaceId} to house room ${currentSpace}`);
     });
 
     socket.on("UpdateHousePosition", (data: ClientMovementData) => {
-        if (currentSpace !== DEFAULT_HOUSE_ROOM_ID || !currentUserId) return;
+        if (!currentSpace || !currentUserId || !currentSpace.includes('-house')) return;
 
         
         const updated = HouseRoomClass.updatePosition(currentSpace, currentUserId, data);
@@ -239,8 +242,8 @@ const SocketConnection = (socket: Socket, io: Server) => {
         }
     });
 
-    socket.on("LeaveHouseMethod", async (data: { userId: string }) => {
-        if (currentSpace !== DEFAULT_HOUSE_ROOM_ID || !data.userId) return;
+    socket.on("LeaveHouseMethod", async (data: { userId: string; roomId?: string }) => {
+        if (!currentSpace || !currentSpace.includes('-house') || !data.userId) return;
 
        
         const leftUser = HouseRoomClass.leaveSpace(currentSpace, data.userId);
@@ -253,7 +256,8 @@ const SocketConnection = (socket: Socket, io: Server) => {
         }
 
         
-        currentSpace = DEFAULT_SPACE_ID; 
+        const mainSpaceId = data.roomId || DEFAULT_SPACE_ID;
+        currentSpace = mainSpaceId; 
         currentUserId = data.userId; 
 
         const mainWorldPositions = { X: 570, Y: 325 }; 
@@ -263,7 +267,8 @@ const SocketConnection = (socket: Socket, io: Server) => {
             positions: mainWorldPositions,
             selectedCharacter: leftUser?.selectedCharacter || '', 
             direction: 'down',
-            isMoving: false
+            isMoving: false,
+            roomId: mainSpaceId
         };
 
         const otherUsersInMain = spaceManager.joinSpace(
@@ -282,14 +287,14 @@ const SocketConnection = (socket: Socket, io: Server) => {
             selectedCharacter: userToRejoinMain.selectedCharacter
         });
 
-        console.log(`User ${userToRejoinMain.UserName} rejoined main world ${currentSpace}`);
+        console.log(`User ${userToRejoinMain.UserName} rejoined space ${currentSpace}`);
     });
 
 
     socket.on("disconnection", () => {
         if (currentSpace && currentUserId) {
             let leftUser;
-            if (currentSpace === DEFAULT_HOUSE_ROOM_ID) {
+            if (currentSpace.includes('-house')) {
                 leftUser = HouseRoomClass.leaveSpace(currentSpace, currentUserId);
             } else {
                 leftUser = spaceManager.leaveSpace(currentSpace, currentUserId);
@@ -306,7 +311,7 @@ const SocketConnection = (socket: Socket, io: Server) => {
     socket.on("disconnect", () => {
         if (currentSpace && currentUserId) {
             let leftUser;
-            if (currentSpace === DEFAULT_HOUSE_ROOM_ID) {
+            if (currentSpace.includes('-house')) {
                 leftUser = HouseRoomClass.leaveSpace(currentSpace, currentUserId);
             } else {
                 leftUser = spaceManager.leaveSpace(currentSpace, currentUserId);
