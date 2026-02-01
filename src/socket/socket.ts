@@ -323,6 +323,40 @@ const SocketConnection = (socket: Socket, io: Server) => {
             }
         }
     });
+
+    // Chat Events
+    socket.on("sendMessage", (data: { roomId: string; userId: string; userName: string; message: string; userImage?: string }) => {
+        if (!data.message || !data.message.trim()) return;
+        
+        // Rate limiting check (max 500 characters)
+        if (data.message.length > 500) {
+            socket.emit("chatError", { message: "Message too long. Maximum 500 characters." });
+            return;
+        }
+
+        const messageData = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            roomId: data.roomId,
+            userId: data.userId,
+            userName: data.userName,
+            message: data.message.trim(),
+            timestamp: Date.now(),
+            userImage: data.userImage || null
+        };
+
+        // Broadcast to all users in the same room (including sender)
+        io.to(data.roomId).emit("newMessage", messageData);
+        console.log(`Message from ${data.userName} in room ${data.roomId}: ${data.message}`);
+    });
+
+    socket.on("typingStatus", (data: { roomId: string; userId: string; userName: string; isTyping: boolean }) => {
+        // Broadcast typing status to all users in room except sender
+        socket.to(data.roomId).emit("userTyping", {
+            userId: data.userId,
+            userName: data.userName,
+            isTyping: data.isTyping
+        });
+    });
 };
 
 export { SocketConnection };
